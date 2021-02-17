@@ -50,7 +50,7 @@ When a new file is added to ripfs, the algorithm is as follows:
    Do this by taking a matching chunk, then extending its bounds in both directions for as long as the data continues to match.
 
 5. If a long enough match is found, record the newly added file in a deduplicated form
-   (verbatim unique data form the start of the file, followed by a reference to another blob, followed by verbatim unique data from the end of the file).
+   (verbatim unique data from the start of the file, followed by a reference to another blob, followed by verbatim unique data from the end of the file).
 
    If no satisfactory match is found, add the contents of the newly added file as a new blob and record the new file as a reference to the entire blob's contents.
 
