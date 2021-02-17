@@ -1,4 +1,6 @@
 import core.stdc.errno;
+import core.sys.posix.fcntl;
+import core.sys.posix.signal;
 import core.sys.posix.sys.stat;
 import core.sys.posix.unistd;
 
@@ -391,6 +393,13 @@ extern(C) nothrow
 		});
 	}
 
+	int fs_chmod(const char* c_path, uint mode)
+	{
+		return fuseWrap({
+			errnoEnforce(chmod(c_path.filePath().toStringz, mode) == 0, "chmod");
+		});
+	}
+
 	int fs_truncate(const char* c_path, long length)
 	{
 		return fuseWrap({
@@ -470,6 +479,13 @@ extern(C) nothrow
 				deduplicatePath(destPath);
 		});
     }
+
+	int fs_utimens(const char* c_path, const ref timespec[2] t)
+	{
+		return fuseWrap({
+			errnoEnforce(utimensat(AT_FDCWD, c_path.filePath().toStringz, t, 0) == 0, "utimensat");
+		});
+	}
 }
 
 int ripfs(
@@ -482,18 +498,25 @@ int ripfs(
 	.storePath = storePath;
 
 	fuse_operations fsops;
-	fsops.access = &fs_access;
-	fsops.readdir = &fs_readdir;
 	fsops.getattr = &fs_getattr;
-	fsops.truncate = &fs_truncate;
 	fsops.readlink = &fs_readlink;
+	fsops.mknod = &fs_mknod;
+	fsops.mkdir = &fs_mkdir;
+	fsops.unlink = &fs_unlink;
+	fsops.rmdir = &fs_rmdir;
+	// fsops.symlink = &fs_symlink;
+	fsops.rename = &fs_rename;
+	// fsops.link = &fs_link;
+	fsops.chmod = &fs_chmod;
+	// fsops.chown = &fs_chown;
+	fsops.truncate = &fs_truncate;
+	// fsops.open = &fs_open;
 	fsops.read = &fs_read;
 	fsops.write = &fs_write;
-	fsops.mknod = &fs_mknod;
-	fsops.unlink = &fs_unlink;
-	fsops.mkdir = &fs_mkdir;
-	fsops.rmdir = &fs_rmdir;
-	fsops.rename = &fs_rename;
+	// fsops.release = &fs_release;
+	fsops.readdir = &fs_readdir;
+	fsops.access = &fs_access;
+	fsops.utimens = &fs_utimens;
 
 	options ~= ["big_writes"]; // Essentially required, otherwise FUSE will use 4K writes and cause abysmal performance
 
