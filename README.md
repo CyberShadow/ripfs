@@ -3,6 +3,7 @@ ripfs
 
 ripfs is a simple deduplicating userspace filesystem designed to efficiently store recordings of Internet radio stations.
 
+
 The problem
 -----------
 
@@ -27,6 +28,7 @@ In this case, users must make a choice with a compromise:
 2. Record the stream contiguously, preserving the order and all transitions.
 
    - Downside: requires a significant and wasteful amount of disk space.
+
 
 The solution
 ------------
@@ -53,6 +55,15 @@ When a new file is added to ripfs, the algorithm is as follows:
    If no satisfactory match is found, add the contents of the newly added file as a new blob and record the new file as a reference to the entire blob's contents.
 
 Aside from the cross-fading effect at the start and end, and occasional corruption (silence/skips), transmissions seem to otherwise be bit-identical, requiring no decoding for deduplication. (If your Internet radio station does not have this property, the current implementation of ripfs will be insufficient for your case.)
+
+
+Building
+--------
+
+- Install [a D compiler](https://dlang.org/download.html)
+- Install [Dub](https://github.com/dlang/dub), if it wasn't included with your D compiler
+- Run `dub build -b release`
+
 
 Usage
 -----
