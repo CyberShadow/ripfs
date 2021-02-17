@@ -439,11 +439,14 @@ extern(C) nothrow
     int fs_mknod(const char* c_path, uint mod, ulong dev)
     {
 		return fuseWrap({
-			enforce(mod == octal!100640 && dev == 0, new ErrnoException("Unsupported mode", EOPNOTSUPP));
+			enforce(S_ISREG(mod) && dev == 0, new ErrnoException("Unsupported mode", EOPNOTSUPP));
 			auto realPath = c_path.filePath();
-			auto f = File(realPath, "wb");
-			ChunkType[1] chunkType = [ChunkType.raw];
-			f.rawWrite(chunkType[]);
+			{
+				auto f = File(realPath, "wb");
+				ChunkType[1] chunkType = [ChunkType.raw];
+				f.rawWrite(chunkType[]);
+			}
+			errnoEnforce(chmod(realPath.toStringz, mod) == 0, "chmod");
 		});
     }
 
