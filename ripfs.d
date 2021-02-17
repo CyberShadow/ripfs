@@ -330,25 +330,15 @@ private:
 		if (realPath.isSymlink)
 			throw new FuseException(EROFS);
 
-		// // New files
-		// if (!realPath.exists)
-		// {
-		// 	auto f = File(realPath, "wb");
-		// 	return f;
-		// }
-
-		// Raw (not yet deduplicated) files
-		{
-			File f;
-			try
-				f.open(realPath, "r+b");
-			catch (ErrnoException e)
-				throw new FuseException(e.errno);
-			ChunkType[1] chunkType;
-			enforce(f.rawRead(chunkType[]).length == 1, "Empty file");
-			enforce(chunkType[0] == ChunkType.raw, new FuseException(EROFS)); // File already deduplicated
-			return f;
-		}
+		File f;
+		try
+			f.open(realPath, "r+b");
+		catch (ErrnoException e)
+			throw new FuseException(e.errno);
+		ChunkType[1] chunkType;
+		enforce(f.rawRead(chunkType[]).length == 1, "Empty file");
+		enforce(chunkType[0] == ChunkType.raw, new FuseException(EROFS)); // File already deduplicated
+		return f;
 	}
 
 public:
