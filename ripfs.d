@@ -510,6 +510,16 @@ int ripfs(
 {
 	.storePath = storePath;
 
+	{
+		auto filesPath = storePath.buildPath("files");
+		if (!filesPath.exists)
+		{
+			stderr.writeln("Initializing RipFS store.");
+			filesPath.mkdirRecurse();
+			stderr.writeln("Initialization complete."); // :)
+		}
+	}
+
 	fuse_operations fsops;
 	fsops.getattr = &fs_getattr;
 	fsops.readlink = &fs_readlink;
