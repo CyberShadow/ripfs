@@ -246,7 +246,17 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 			bestHit = hit;
 		}
 
-	if (bestLength < (Reference.sizeof - VerbatimHeader.sizeof))
+	// Deduplicate if we found a contiguous match at least this long.
+	auto minLength = max(
+		// Amount of data saved by using a reference chunk instead of a verbatim chunk.
+		Reference.sizeof - VerbatimHeader.sizeof,
+		// If only a small fragment of the file could be deduplicated,
+		// it is more beneficial to save it as a blob instead,
+		// so that copies of this file get deduplicated in full.
+		data.length / 2,
+	);
+
+	if (bestLength < minLength)
 	{
 		// No good hits - save new blob
 		auto blobHash = digest!Digest(data);
