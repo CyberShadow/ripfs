@@ -45,7 +45,7 @@ When a new file is added to ripfs, the algorithm is as follows:
 
 3. Search the database for previously encountered occurrences of these chunks.
 
-4. Using these search results, spans within the added file which match previously known blobs.
+4. Using these search results, find spans within the added file which match previously known blobs.
 
    Do this by taking a matching chunk, then extending its bounds in both directions for as long as the data continues to match.
    Use as many blobs as necessary to cover as much of the file as possible.
