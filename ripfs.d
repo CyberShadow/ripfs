@@ -359,11 +359,21 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 /// Deduplicate a file, if needed.
 void deduplicatePath(string path)
 {
-	auto data = path.read().bytes;
+	const(ubyte)[] data = path.read().bytes;
 	if (!data.length || data[0] != ChunkType.raw)
 		return; // Doesn't need to be deduplicated
 
-	atomicWrite(path, data.deduplicate());
+	data = data.deduplicate();
+
+	auto attributes = path.getAttributes();
+	SysTime accessTime, modificationTime;
+	path.getTimes(accessTime, modificationTime);
+
+	auto tmpPath = path ~ ".ripfs-tmp";
+	tmpPath.write(data);
+	tmpPath.setTimes(accessTime, modificationTime);
+	tmpPath.setAttributes(attributes);
+	tmpPath.rename(path);
 }
 
 auto filePath(const char* c_path)
