@@ -211,18 +211,21 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 
 				auto blobData = storePath.buildPath("blobs", hashPath(reference.hash)).read().bytes;
 
-				// Returns offset in blob of the last matching byte in the given direction.
+				// Returns offset in blob of the first mismatching byte in the given direction.
 				ulong scan(byte dir)()
 				{
 					long filePos = chunk.offset;
 					@property long blobPos() { return filePos - hit.delta; }
+
+					static if (dir < 0)
+						filePos += dir;
 
 					while (true)
 					{
 						bool fileDone = (dir < 0) ? filePos < 0 : filePos >=     data.length;
 						bool blobDone = (dir < 0) ? blobPos < 0 : blobPos >= blobData.length;
 						if (fileDone || blobDone)
-							return filePos - dir;
+							return filePos;
 						ubyte fileByte = /*fileDone ? 0 :*/     data[filePos];
 						ubyte blobByte = /*blobDone ? 0 :*/ blobData[blobPos];
 						if (fileByte != blobByte)
@@ -231,8 +234,8 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 					}
 				}
 
-				extent.start = scan!(-1);
-				extent.end   = scan!(+1) + 1;
+				extent.start = scan!(-1) + 1;
+				extent.end   = scan!(+1);
 
 				return extent;
 			}());
