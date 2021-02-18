@@ -10,6 +10,7 @@ import std.digest;
 import std.digest.md : MD5;
 import std.exception;
 import std.file;
+import std.internal.cstring;
 import std.path;
 import std.range;
 import std.string;
@@ -329,17 +330,17 @@ void deduplicatePath(string path)
 	atomicWrite(path, deduplicate(data));
 }
 
-string filePath(const char* c_path)
+auto filePath(const char* c_path)
 {
 	auto path = c_path.fromStringz;
-	enforce(path.startsWith("/"), new ErrnoException("Malformed FUSE path", EINVAL));
-	return storePath ~ "/files" ~ cast(string)path;
+	enforce(path.skipOver("/"), new ErrnoException("Malformed FUSE path", EINVAL));
+	return chainPath(storePath, "files", path);
 }
 
 /// Returns a writable File for a FUSE path, assuming it points to a raw file.
 File rawFile(const char* c_path)
 {
-	auto realPath = c_path.filePath();
+	auto realPath = c_path.filePath;
 
 	if (realPath.isSymlink)
 		throw new ErrnoException("Can't write through a symlink", EROFS);
@@ -374,8 +375,8 @@ extern(C) nothrow
 	int fs_getattr(const char* c_path, stat_t* s)
     {
 		return fuseWrap({
-			auto realPath = c_path.filePath();
-			errnoEnforce(lstat(realPath.toStringz, s) == 0, "lstat");
+			auto realPath = c_path.filePath;
+			errnoEnforce(lstat(realPath.tempCString, s) == 0, "lstat");
 
 			if (S_ISREG(s.st_mode))
 				s.st_size = realPath.read().bytes.getLength();
@@ -385,7 +386,7 @@ extern(C) nothrow
 	int fs_read(const char* c_path, char* buf_ptr, size_t size, off_t offset, fuse_file_info* fi)
     {
 		return fuseWrap({
-			auto unparsedData = c_path.filePath().read().bytes;
+			auto unparsedData = c_path.filePath.read().bytes;
 			auto parsedData = unparsedData.parse();
 			if (offset >= parsedData.length)
 				return 0;
@@ -408,7 +409,7 @@ extern(C) nothrow
 	int fs_chmod(const char* c_path, uint mode)
 	{
 		return fuseWrap({
-			errnoEnforce(chmod(c_path.filePath().toStringz, mode) == 0, "chmod");
+			errnoEnforce(chmod(c_path.filePath.tempCString, mode) == 0, "chmod");
 		});
 	}
 
@@ -426,7 +427,7 @@ extern(C) nothrow
 		fuse_fill_dir_t filler, off_t /*offset*/, fuse_file_info* fi)
     {
 		return fuseWrap({
-			foreach (de; c_path.filePath.dirEntries(SpanMode.shallow))
+			foreach (de; c_path.filePath.to!string.dirEntries(SpanMode.shallow))
 				filler(buf, cast(char*)de.name.baseName.toStringz, null, 0);
 		});
     }
@@ -434,7 +435,7 @@ extern(C) nothrow
 	int fs_readlink(const char* c_path, char* buf_ptr, size_t size)
 	{
 		return fuseWrap({
-			auto result = readlink(c_path.filePath().toStringz, buf_ptr, size);
+			auto result = readlink(c_path.filePath.tempCString, buf_ptr, size);
 			if (result < 0)
 				return -errno;
 			return result.to!int;
@@ -444,7 +445,7 @@ extern(C) nothrow
     int fs_access(const char* c_path, int mode)
     {
 		return fuseWrap({
-			return access(c_path.filePath().toStringz, mode);
+			return access(c_path.filePath.tempCString, mode);
 		});
     }
 
@@ -452,53 +453,53 @@ extern(C) nothrow
     {
 		return fuseWrap({
 			enforce(S_ISREG(mod) && dev == 0, new ErrnoException("Unsupported mode", EOPNOTSUPP));
-			auto realPath = c_path.filePath();
+			auto realPath = c_path.filePath;
 			{
 				auto f = File(realPath, "wb");
 				ChunkType[1] chunkType = [ChunkType.raw];
 				f.rawWrite(chunkType[]);
 			}
-			errnoEnforce(chmod(realPath.toStringz, mod) == 0, "chmod");
+			errnoEnforce(chmod(realPath.tempCString, mod) == 0, "chmod");
 		});
     }
 
 	int fs_unlink(const char* c_path)
 	{
 		return fuseWrap({
-			c_path.filePath().remove();
+			c_path.filePath.remove();
 		});
 	}
 
 	int fs_mkdir(const char* c_path, uint mode)
 	{
 		return fuseWrap({
-			errnoEnforce(mkdir(c_path.filePath().toStringz, mode) == 0, "mkdir");
+			errnoEnforce(mkdir(c_path.filePath.tempCString, mode) == 0, "mkdir");
 		});
 	}
 
 	int fs_rmdir(const char* c_path)
 	{
 		return fuseWrap({
-			c_path.filePath().rmdir();
+			c_path.filePath.rmdir();
 		});
 	}
 
     int fs_rename(const char* c_orig, const char* c_dest)
     {
 		return fuseWrap({
-			auto destPath = c_dest.filePath();
+			auto destPath = c_dest.filePath;
 
-			c_orig.filePath().rename(destPath);
+			c_orig.filePath.rename(destPath);
 
 			if (!isSymlink(destPath) && isFile(destPath))
-				deduplicatePath(destPath);
+				deduplicatePath(destPath.to!string);
 		});
     }
 
 	int fs_utimens(const char* c_path, const ref timespec[2] t)
 	{
 		return fuseWrap({
-			errnoEnforce(utimensat(AT_FDCWD, c_path.filePath().toStringz, t, 0) == 0, "utimensat");
+			errnoEnforce(utimensat(AT_FDCWD, c_path.filePath.tempCString, t, 0) == 0, "utimensat");
 		});
 	}
 }
