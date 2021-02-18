@@ -61,6 +61,7 @@ enum ChunkType : ubyte
 	verbatim,
 }
 
+/// Convert a hash to a fanned-out path fragment.
 string hashPath(ref Hash hash)
 {
 	return format!"%02x/%02x/%-(%02x%)"(hash[0], hash[1], hash[2..$]);
@@ -68,7 +69,7 @@ string hashPath(ref Hash hash)
 
 __gshared string storePath;
 
-/// Parse a deduplicated file.
+/// Parse a deduplicated file's contents.
 const(ubyte)[] parse(const(ubyte)[] data)
 {
 	ubyte[] result;
@@ -111,7 +112,7 @@ const(ubyte)[] parse(const(ubyte)[] data)
 	return result;
 }
 
-/// Compute the length of a deduplicated file.
+/// Compute the length of a deduplicated file's contents.
 size_t getLength(const(ubyte)[] data)
 {
 	size_t result;
@@ -147,7 +148,7 @@ size_t getLength(const(ubyte)[] data)
 	return result;
 }
 
-/// Deduplicate a file, if needed.
+/// Deduplicate a file's contents.
 const(ubyte)[] deduplicate(const(ubyte)[] data)
 {
 	assert(data[0] == ChunkType.raw);
@@ -318,6 +319,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 	}
 }
 
+/// Deduplicate a file, if needed.
 void deduplicatePath(string path)
 {
 	auto data = path.read.bytes;
