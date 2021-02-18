@@ -209,7 +209,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 			hits.require(hit, {
 				HitExtent extent;
 
-				auto blobData = storePath.buildPath("blobs", hashPath(reference.hash)).read.bytes;
+				auto blobData = storePath.buildPath("blobs", hashPath(reference.hash)).read().bytes;
 
 				// Returns offset in blob of the last matching byte in the given direction.
 				ulong scan(byte dir)()
@@ -323,11 +323,11 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 /// Deduplicate a file, if needed.
 void deduplicatePath(string path)
 {
-	auto data = path.read.bytes;
+	auto data = path.read().bytes;
 	if (!data.length || data[0] != ChunkType.raw)
 		return; // Doesn't need to be deduplicated
 
-	atomicWrite(path, deduplicate(data));
+	atomicWrite(path, data.deduplicate());
 }
 
 auto filePath(const char* c_path)
