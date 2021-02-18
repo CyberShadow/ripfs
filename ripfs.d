@@ -5,6 +5,7 @@ import core.sys.posix.sys.stat;
 import core.sys.posix.unistd;
 
 import std.algorithm, std.conv, std.stdio;
+import std.algorithm.sorting;
 import std.array;
 import std.digest;
 import std.digest.md : MD5;
@@ -68,7 +69,12 @@ string hashPath(ref Hash hash)
 	return format!"%02x/%02x/%-(%02x%)"(hash[0], hash[1], hash[2..$]);
 }
 
-__gshared string storePath;
+__gshared
+{
+	string storePath;
+	enum dedupThresholdDefault = 128 * 1024;
+	ulong dedupThreshold;
+}
 
 /// Parse a deduplicated file's contents.
 const(ubyte)[] parse(const(ubyte)[] data)
@@ -180,8 +186,6 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 	}
 
 	// Next, check our database and collect all hits.
-	// NOTE: this is currently over-engineered, with the current deduplication policy
-	// there will never be more than one hit per chunk.
 
 	struct Hit
 	{
@@ -242,28 +246,47 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 		}
 	}
 
-	Hit bestHit;
-	ulong bestLength = 0;
-	foreach (hit, extent; hits)
-		if (extent.length > bestLength)
-		{
-			bestLength = extent.length;
-			bestHit = hit;
-		}
+	// Sort hits, best (longest) first
+	auto bestHits = hits
+		.byKeyValue
+		.array
+		.sort!((a, b) => a.value.length > b.value.length)
+		.release;
 
-	// Deduplicate if we found a contiguous match at least this long.
-	auto minLength = max(
-		// Amount of data saved by using a reference chunk instead of a verbatim chunk.
-		Reference.sizeof - VerbatimHeader.sizeof,
-		// If only a small fragment of the file could be deduplicated,
-		// it is more beneficial to save it as a blob instead,
-		// so that copies of this file get deduplicated in full.
-		data.length / 2,
-	);
+	// Map for which hit we are going to use for each byte.
+	// hitMap[i] corresponds to bestHits[i-1].
+	auto hitMap = new ubyte[data.length];
 
-	if (bestLength < minLength)
+	if (bestHits.length > ubyte.max - 1)
+		bestHits.length = ubyte.max - 1;
+
+	// Use each hit for deduplication, if applicable.
+	foreach (i, ref hit; bestHits)
 	{
-		// No good hits - save new blob
+		auto start = hit.value.start;
+		auto end   = hit.value.end;
+
+		// Shrink off overlaps
+		while (start < end && hitMap[start] != 0)
+			start++;
+		while (start < end && hitMap[end - 1] != 0)
+			end--;
+
+		// Note: The above scan doesn't handle "islands" (i.e. e.g. 000001111100000).
+		// However, that shouldn't be possible due to the length sorting,
+		// and even if it was, clobbering it is beneficial as
+		// we will cover more with a single chunk.
+
+		hitMap[start .. end] = (1 + i).to!ubyte;
+	}
+
+	debug writeln("Hits: ", hitMap.group);
+
+	auto numUniqueBytes = hitMap.count!(b => b == 0);
+
+	if (bestHits.length == 0 || numUniqueBytes > dedupThreshold)
+	{
+		// File could not be satisfactorily deduplicated - save new blob
 		auto blobHash = digest!Digest(data);
 		auto blobPath = storePath.buildPath("blobs", hashPath(blobHash));
 		blobPath.ensurePathExists();
@@ -286,37 +309,42 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 	}
 
 	{
-		auto bestExtent = hits[bestHit];
-		auto fileStart = bestExtent.start;
-		auto fileEnd   = bestExtent.end  ;
-		auto blobStart = fileStart - bestHit.delta;
-		auto blobEnd   = fileEnd   - bestHit.delta;
-
 		ubyte[] result;
 
-		if (fileStart > 0)
+		size_t offset = 0;
+		foreach (g; hitMap.group)
 		{
-			result ~= ChunkType.verbatim;
-			VerbatimHeader header;
-			header.length = fileStart;
-			result ~= header.bytes;
-			result ~= data[0 .. fileStart];
-		}
+			ubyte mapIndex = g[0];
+			ulong length = g[1];
 
-		result ~= ChunkType.reference;
-		Reference reference;
-		reference.hash = bestHit.blobHash;
-		reference.offset = blobStart;
-		reference.length = blobEnd - blobStart;
-		result ~= reference.bytes;
+			if (mapIndex == 0)
+			{
+				// Could not deduplicate - write verbatim chunk
+				result ~= ChunkType.verbatim;
+				VerbatimHeader header;
+				header.length = length;
+				result ~= header.bytes;
+				result ~= data[offset .. offset + length];
+			}
+			else
+			{
+				auto hit = &bestHits[mapIndex - 1];
 
-		if (fileEnd < data.length)
-		{
-			result ~= ChunkType.verbatim;
-			VerbatimHeader header;
-			header.length = data.length - fileEnd;
-			result ~= header.bytes;
-			result ~= data[fileEnd .. $];
+				auto fileStart = offset;
+				auto fileEnd   = offset + length;
+
+				auto blobStart = fileStart - hit.key.delta;
+				auto blobEnd   = fileEnd   - hit.key.delta;
+
+				result ~= ChunkType.reference;
+				Reference reference;
+				reference.hash = hit.key.blobHash;
+				reference.offset = blobStart;
+				reference.length = blobEnd - blobStart;
+				result ~= reference.bytes;
+			}
+
+			offset += length;
 		}
 
 		return result;
@@ -510,11 +538,13 @@ extern(C) nothrow
 int ripfs(
 	Parameter!(string, "Directory path where ripfs should store its data.") storePath,
 	Parameter!(string, "Directory path where the ripfs virtual filesystem should be created.") mountPath,
+	Parameter!(ulong, "Allow at most this many unique bytes in deduplicated files before saving them as a reference blob.") dedupThreshold = dedupThresholdDefault,
 	Switch!("Run in foreground.", 'f') foreground = false,
 	Option!(string[], "Additional FUSE options (e.g. debug).", "STR", 'o') options = null,
 )
 {
 	.storePath = storePath;
+	.dedupThreshold = dedupThreshold;
 
 	{
 		auto filesPath = storePath.buildPath("files");

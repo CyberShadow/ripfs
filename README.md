@@ -45,12 +45,13 @@ When a new file is added to ripfs, the algorithm is as follows:
 
 3. Search the database for previously encountered occurrences of these chunks.
 
-4. Using these search results, find the longest span within the added file that matches a previously known blob.
+4. Using these search results, spans within the added file which match previously known blobs.
 
    Do this by taking a matching chunk, then extending its bounds in both directions for as long as the data continues to match.
+   Use as many blobs as necessary to cover as much of the file as possible.
 
-5. If a long enough match is found, record the newly added file in a deduplicated form
-   (verbatim unique data from the start of the file, followed by a reference to another blob, followed by verbatim unique data from the end of the file).
+5. If sufficient matches are found, record the newly added file in a deduplicated form
+   (usually verbatim unique data from the start of the file, followed by a reference to another blob, followed by verbatim unique data from the end of the file).
 
    If no satisfactory match is found, add the contents of the newly added file as a new blob and record the new file as a reference to the entire blob's contents.
 
