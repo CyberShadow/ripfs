@@ -376,7 +376,7 @@ extern(C) nothrow
 			errnoEnforce(lstat(realPath.toStringz, s) == 0, "lstat");
 
 			if (S_ISREG(s.st_mode))
-				s.st_size = parse(realPath.read.bytes).length;
+				s.st_size = realPath.read().bytes.getLength();
 		});
     }
 
