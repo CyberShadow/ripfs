@@ -21,11 +21,11 @@ In this case, users must make a choice with a compromise:
      segment beginnings and ends may now fade from/to segments that had been deduplicated and deleted,
      resulting in a jarring transition.
 
-   - Downside: if the copy of the segment to keep is chosen arbitrary,
+   - Downside: if the copy of the segment to keep is chosen arbitrarily,
      there is a risk that the chosen copy is imperfect,
      and uncorrupted "duplicates" are deleted.
 
-2. Record the stream contiguously, preserving the order and all transitions.
+2. Record the stream continuously, preserving the order and all transitions.
 
    - Downside: requires a significant and wasteful amount of disk space.
 
