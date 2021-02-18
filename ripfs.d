@@ -4,16 +4,21 @@ import core.sys.posix.signal;
 import core.sys.posix.sys.stat;
 import core.sys.posix.unistd;
 
-import std.algorithm, std.conv, std.stdio;
+import std.algorithm.comparison;
+import std.algorithm.iteration;
+import std.algorithm.searching;
 import std.algorithm.sorting;
 import std.array;
-import std.digest;
+import std.conv;
+import std.datetime.systime;
 import std.digest.md : MD5;
+import std.digest;
 import std.exception;
 import std.file;
 import std.internal.cstring;
 import std.path;
 import std.range;
+import std.stdio : File, stderr;
 import std.string;
 import std.traits;
 
@@ -280,7 +285,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 		hitMap[start .. end] = (1 + i).to!ubyte;
 	}
 
-	debug writeln("Hits: ", hitMap.group);
+	debug stderr.writeln("Hits: ", hitMap.group);
 
 	auto numUniqueBytes = hitMap.count!(b => b == 0);
 
