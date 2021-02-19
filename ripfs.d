@@ -553,7 +553,7 @@ extern(C) nothrow
 int ripfs(
 	Parameter!(string, "Directory path where ripfs should store its data.") storePath,
 	Parameter!(string, "Directory path where the ripfs virtual filesystem should be created.") mountPath,
-	Parameter!(ulong, "Allow at most this many unique bytes in deduplicated files before saving them as a reference blob.") dedupThreshold = dedupThresholdDefault,
+	Option!(ulong, "Allow at most this many unique bytes in deduplicated files before saving them as a reference blob.") dedupThreshold = dedupThresholdDefault,
 	Switch!("Run in foreground.", 'f') foreground = false,
 	Option!(string[], "Additional FUSE options (e.g. debug).", "STR", 'o') options = null,
 )
