@@ -27,6 +27,8 @@ import c.fuse.fuse;
 import chunker;
 import chunker.polynomials;
 
+import ae.sys.data;
+import ae.sys.datamm;
 import ae.sys.file;
 import ae.utils.array;
 import ae.utils.funopt;
@@ -81,10 +83,28 @@ __gshared
 	ulong dedupThreshold;
 }
 
-/// Parse a deduplicated file's contents.
-const(ubyte)[] parse(const(ubyte)[] data)
+ubyte[n] shift(size_t n)(ref Data data)
 {
-	ubyte[] result;
+	if (data.length < n) assert(false);
+	ubyte[n] result = data.contents.bytes[0 .. n];
+	data = data[n .. $];
+	return result;
+}
+
+Data shift(ref Data data, size_t n)
+{
+	if (data.length < n) assert(false);
+	Data result = data[0 .. n];
+	data = data[n .. $];
+	return result;
+}
+
+ubyte shift(ref Data data) { return data.shift!1[0]; }
+
+/// Parse a deduplicated file's contents.
+DataVec parse(Data data)
+{
+	DataVec result;
 	while (data.length)
 	{
 		auto type = cast(ChunkType)data.shift;
@@ -92,20 +112,18 @@ const(ubyte)[] parse(const(ubyte)[] data)
 		{
 			case ChunkType.raw:
 				enforce(!result, "Raw chunk type is only allowed at the start of the file");
-				return data;
+				result ~= data;
+				return result;
 			case ChunkType.reference:
 			{
 				enforce(data.length >= Reference.sizeof, "Not enough data in file for Reference");
 				auto reference = (cast(Reference[1])data.shift!(Reference.sizeof))[0];
 				auto f = storePath
 					.buildPath("blobs", hashPath(reference.hash))
-					.File("rb");
-				f.seek(reference.offset);
-
-				auto targetStart = result.length;
-				result.length += reference.length;
-				auto bytesRead = f.rawRead(result[targetStart .. $]);
-				enforce(bytesRead.length == reference.length, "EOF in blob");
+					.mapFile(MmMode.read);
+				f = f[reference.offset .. $];
+				enforce(f.length >= reference.length, "EOF in blob");
+				result ~= f[0 .. reference.length];
 				break;
 			}
 			case ChunkType.verbatim:
@@ -125,7 +143,7 @@ const(ubyte)[] parse(const(ubyte)[] data)
 }
 
 /// Compute the length of a deduplicated file's contents.
-size_t getLength(const(ubyte)[] data)
+size_t getLength(Data data)
 {
 	size_t result;
 	while (data.length)
@@ -425,19 +443,25 @@ extern(C) nothrow
 			errnoEnforce(lstat(realPath.tempCString, s) == 0, "lstat");
 
 			if (S_ISREG(s.st_mode))
-				s.st_size = realPath.read().bytes.getLength();
+				s.st_size = realPath.to!string.mapFile(MmMode.read).getLength();
 		});
     }
 
 	int fs_read(const char* c_path, char* buf_ptr, size_t size, off_t offset, fuse_file_info* fi)
     {
 		return fuseWrap({
-			auto unparsedData = c_path.filePath.read().bytes;
+			auto unparsedData = c_path.filePath.to!string.mapFile(MmMode.read);
 			auto parsedData = unparsedData.parse();
-			if (offset >= parsedData.length)
+			auto parsedDataLength = parsedData[].map!((ref Data d) => d.length).sum;
+			if (offset >= parsedDataLength)
 				return 0;
-			auto bytesRead = min(size, parsedData.length - offset);
-			buf_ptr[0 .. bytesRead] = cast(char[])parsedData[offset .. offset + bytesRead];
+			auto bytesRead = min(size, parsedDataLength - offset);
+			size_t p = 0;
+			foreach (ref datum; parsedData.bytes[offset .. offset + bytesRead])
+			{
+				buf_ptr[p .. p + datum.length] = cast(char[])datum.contents[];
+				p += datum.length;
+			}
 			return bytesRead.to!int;
 		});
     }
