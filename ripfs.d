@@ -437,7 +437,7 @@ int fuseWrap(scope void delegate() dg) nothrow
 extern(C) nothrow
 {
 	int fs_getattr(const char* c_path, stat_t* s)
-    {
+	{
 		return fuseWrap({
 			auto realPath = c_path.filePath;
 			errnoEnforce(lstat(realPath.tempCString, s) == 0, "lstat");
@@ -445,10 +445,10 @@ extern(C) nothrow
 			if (S_ISREG(s.st_mode))
 				s.st_size = realPath.to!string.mapFile(MmMode.read).getLength();
 		});
-    }
+	}
 
 	int fs_read(const char* c_path, char* buf_ptr, size_t size, off_t offset, fuse_file_info* fi)
-    {
+	{
 		return fuseWrap({
 			auto unparsedData = c_path.filePath.to!string.mapFile(MmMode.read);
 			auto parsedData = unparsedData.parse();
@@ -464,9 +464,9 @@ extern(C) nothrow
 			}
 			return bytesRead.to!int;
 		});
-    }
+	}
 
-    int fs_write(const char* c_path, char* data_ptr, size_t size, off_t offset, fuse_file_info* fi)
+	int fs_write(const char* c_path, char* data_ptr, size_t size, off_t offset, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			auto f = c_path.rawFile();
@@ -493,14 +493,14 @@ extern(C) nothrow
 		});
 	}
 
-    int fs_readdir(const char* c_path, void* buf, 
+	int fs_readdir(const char* c_path, void* buf, 
 		fuse_fill_dir_t filler, off_t /*offset*/, fuse_file_info* fi)
-    {
+	{
 		return fuseWrap({
 			foreach (de; c_path.filePath.to!string.dirEntries(SpanMode.shallow))
 				filler(buf, cast(char*)de.name.baseName.toStringz, null, 0);
 		});
-    }
+	}
 
 	int fs_readlink(const char* c_path, char* buf_ptr, size_t size)
 	{
@@ -512,15 +512,15 @@ extern(C) nothrow
 		});
 	}
 
-    int fs_access(const char* c_path, int mode)
-    {
+	int fs_access(const char* c_path, int mode)
+	{
 		return fuseWrap({
 			return access(c_path.filePath.tempCString, mode);
 		});
-    }
+	}
 
-    int fs_mknod(const char* c_path, uint mod, ulong dev)
-    {
+	int fs_mknod(const char* c_path, uint mod, ulong dev)
+	{
 		return fuseWrap({
 			enforce(S_ISREG(mod) && dev == 0, new ErrnoException("Unsupported mode", EOPNOTSUPP));
 			auto realPath = c_path.filePath;
@@ -531,7 +531,7 @@ extern(C) nothrow
 			}
 			errnoEnforce(chmod(realPath.tempCString, mod) == 0, "chmod");
 		});
-    }
+	}
 
 	int fs_unlink(const char* c_path)
 	{
@@ -554,8 +554,8 @@ extern(C) nothrow
 		});
 	}
 
-    int fs_rename(const char* c_orig, const char* c_dest)
-    {
+	int fs_rename(const char* c_orig, const char* c_dest)
+	{
 		return fuseWrap({
 			auto destPath = c_dest.filePath;
 
@@ -564,7 +564,7 @@ extern(C) nothrow
 			if (!isSymlink(destPath) && isFile(destPath))
 				deduplicatePath(destPath.to!string);
 		});
-    }
+	}
 
 	int fs_utimens(const char* c_path, const ref timespec[2] t)
 	{
