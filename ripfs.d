@@ -422,11 +422,20 @@ int fuseWrap(scope int delegate() dg) nothrow
 	try
 		return dg();
 	catch (ErrnoException e)
+	{
+		debug stderr.writeln(e).assumeWontThrow;
 		return -e.errno;
+	}
 	catch (FileException e)
+	{
+		debug stderr.writeln(e).assumeWontThrow;
 		return -e.errno;
+	}
 	catch (Exception e)
+	{
+		debug stderr.writeln(e).assumeWontThrow;
 		return -EIO;
+	}
 }
 
 int fuseWrap(scope void delegate() dg) nothrow
