@@ -443,6 +443,50 @@ int fuseWrap(scope void delegate() dg) nothrow
 	return fuseWrap({ dg(); return 0; });
 }
 
+/// Calculate and fill in `s.st_size`.
+void cachedGetSize(string realPathStr, stat_t* s)
+{
+	// So that we don't have to read the entire file on a `stat`,
+	// cache virtual file size in an xattr.
+	static struct CachedSize
+	{
+		// Key
+		long mtime;
+		ulong realSize;
+		// Value
+		ulong virtualSize;
+	}
+
+	try
+	{
+		auto cacheData = cast(ubyte[])realPathStr.xAttrs["user.ripfs.size"];
+		enforce(cacheData.length == CachedSize.sizeof, "Size mismatch");
+		auto cacheEntry = cacheData.fromBytes!CachedSize;
+		enforce(cacheEntry.mtime == (*s).statTimeToStdTime!"m".stdTime, "Cache key mtime mismatch");
+		enforce(cacheEntry.realSize == s.st_size, "Cache key size mismatch");
+
+		// Cache hit
+		s.st_size = cacheEntry.virtualSize;
+	}
+	catch (Exception)
+	{
+		// Cache miss or other error
+		auto virtualSize = realPathStr.mapFile(MmMode.read).getLength();
+
+		CachedSize cacheEntry;
+		cacheEntry.mtime = (*s).statTimeToStdTime!"m".stdTime;
+		cacheEntry.realSize = s.st_size;
+		cacheEntry.virtualSize = virtualSize;
+
+		s.st_size = cacheEntry.virtualSize;
+
+		// Save
+		try
+			realPathStr.xAttrs["user.ripfs.size"] = cacheEntry.bytes;
+		catch (Exception e) {} // xattrs not supported
+	}
+}
+
 extern(C) nothrow
 {
 	int fs_getattr(const char* c_path, stat_t* s)
@@ -452,7 +496,7 @@ extern(C) nothrow
 			errnoEnforce(lstat(realPath.tempCString, s) == 0, "lstat");
 
 			if (S_ISREG(s.st_mode))
-				s.st_size = realPath.to!string.mapFile(MmMode.read).getLength();
+				cachedGetSize(realPath.to!string, s);
 		});
 	}
 
