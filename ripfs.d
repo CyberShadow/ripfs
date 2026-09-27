@@ -402,6 +402,15 @@ auto filePath(const char* c_path)
 	return chainPath(storePath, "files", path);
 }
 
+/// Files in the store always begin with a ChunkType byte.
+/// Empty files are stubs left behind by failed creations
+/// (from before fs_mknod created files atomically),
+/// and are presented as nonexistent.
+bool isStub(ref const stat_t s)
+{
+	return S_ISREG(s.st_mode) && s.st_size == 0;
+}
+
 /// Returns a writable File for a FUSE path, assuming it points to a raw file.
 File rawFile(const char* c_path)
 {
@@ -495,6 +504,7 @@ extern(C) nothrow
 		return fuseWrap({
 			auto realPath = c_path.filePath;
 			errnoEnforce(lstat(realPath.tempCString, s) == 0, "lstat");
+			enforce(!isStub(*s), new ErrnoException("Stub file", ENOENT));
 
 			if (S_ISREG(s.st_mode))
 				cachedGetSize(realPath.to!string, s);
@@ -552,7 +562,13 @@ extern(C) nothrow
 	{
 		return fuseWrap({
 			foreach (de; c_path.filePath.to!string.dirEntries(SpanMode.shallow))
+			{
+				stat_t s;
+				errnoEnforce(lstat(de.name.tempCString, &s) == 0, "lstat");
+				if (isStub(s))
+					continue;
 				filler(buf, cast(char*)de.name.baseName.toStringz, null, 0);
+			}
 		});
 	}
 
