@@ -28,6 +28,7 @@ import chunker;
 import chunker.polynomials;
 
 import ae.sys.data;
+import ae.sys.dataset;
 import ae.sys.datamm;
 import ae.sys.file;
 import ae.utils.array;
@@ -86,7 +87,7 @@ __gshared
 ubyte[n] shift(size_t n)(ref Data data)
 {
 	if (data.length < n) assert(false);
-	ubyte[n] result = data.contents.bytes[0 .. n];
+	ubyte[n] result = data.unsafeContents[0 .. n];
 	data = data[n .. $];
 	return result;
 }
@@ -236,7 +237,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 			hits.require(hit, {
 				HitExtent extent;
 
-				auto blobData = storePath.buildPath("blobs", hashPath(reference.hash)).read().bytes;
+				auto blobData = storePath.buildPath("blobs", hashPath(reference.hash)).read().asBytes;
 
 				// Returns offset in blob of the first mismatching byte in the given direction.
 				ulong scan(byte dir)()
@@ -322,12 +323,12 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 			chunkPath.ensurePathExists();
 			auto reference = Reference(blobHash, chunk.offset, chunk.length);
 			auto f = File(chunkPath, "ab");
-			f.rawWrite(reference.toArray);
+			f.rawWrite(reference.asSlice);
 		}
 
 		ubyte[] result;
 		result ~= ChunkType.reference;
-		result ~= [Reference(blobHash, 0, data.length)].bytes;
+		result ~= [Reference(blobHash, 0, data.length)].asBytes;
 		return result;
 	}
 
@@ -346,7 +347,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 				result ~= ChunkType.verbatim;
 				VerbatimHeader header;
 				header.length = length;
-				result ~= header.bytes;
+				result ~= header.asBytes;
 				result ~= data[offset .. offset + length];
 			}
 			else
@@ -364,7 +365,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 				reference.hash = hit.key.blobHash;
 				reference.offset = blobStart;
 				reference.length = blobEnd - blobStart;
-				result ~= reference.bytes;
+				result ~= reference.asBytes;
 			}
 
 			offset += length;
@@ -377,7 +378,7 @@ const(ubyte)[] deduplicate(const(ubyte)[] data)
 /// Deduplicate a file, if needed.
 void deduplicatePath(string path)
 {
-	const(ubyte)[] data = path.read().bytes;
+	const(ubyte)[] data = path.read().asBytes;
 	if (!data.length || data[0] != ChunkType.raw)
 		return; // Doesn't need to be deduplicated
 
@@ -461,7 +462,7 @@ void cachedGetSize(string realPathStr, stat_t* s)
 	{
 		auto cacheData = cast(ubyte[])realPathStr.xAttrs["user.ripfs.size"];
 		enforce(cacheData.length == CachedSize.sizeof, "Size mismatch");
-		auto cacheEntry = cacheData.fromBytes!CachedSize;
+		auto cacheEntry = cacheData.as!CachedSize;
 		enforce(cacheEntry.mtime == (*s).statTimeToStdTime!"m".stdTime, "Cache key mtime mismatch");
 		enforce(cacheEntry.realSize == s.st_size, "Cache key size mismatch");
 
@@ -482,7 +483,7 @@ void cachedGetSize(string realPathStr, stat_t* s)
 
 		// Save
 		try
-			realPathStr.xAttrs["user.ripfs.size"] = cacheEntry.bytes;
+			realPathStr.xAttrs["user.ripfs.size"] = cacheEntry.asBytes;
 		catch (Exception e) {} // xattrs not supported
 	}
 }
@@ -512,7 +513,7 @@ extern(C) nothrow
 			size_t p = 0;
 			foreach (ref datum; parsedData.bytes[offset .. offset + bytesRead])
 			{
-				buf_ptr[p .. p + datum.length] = cast(char[])datum.contents[];
+				buf_ptr[p .. p + datum.length] = cast(char[])datum.unsafeContents;
 				p += datum.length;
 			}
 			return bytesRead.to!int;
