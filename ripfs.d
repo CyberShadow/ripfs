@@ -593,13 +593,12 @@ extern(C) nothrow
 	{
 		return fuseWrap({
 			enforce(S_ISREG(mod) && dev == 0, new ErrnoException("Unsupported mode", EOPNOTSUPP));
-			auto realPath = c_path.filePath;
-			{
-				auto f = File(realPath, "wb");
+			// Create atomically, so that a failure (e.g. ENOSPC) doesn't leave a stub behind.
+			atomicDg((string target) {
 				ChunkType[1] chunkType = [ChunkType.raw];
-				f.rawWrite(chunkType[]);
-			}
-			errnoEnforce(chmod(realPath.tempCString, mod) == 0, "chmod");
+				std.file.write(target, chunkType[]);
+				errnoEnforce(chmod(target.tempCString, mod) == 0, "chmod");
+			}, c_path.filePath.to!string);
 		});
 	}
 
