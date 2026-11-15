@@ -22,7 +22,8 @@ import std.stdio : File, stderr;
 import std.string;
 import std.traits;
 
-import c.fuse.fuse;
+import oxfuse.cfuse;
+import oxfuse.fuse_file_info : fuse_file_info;
 
 import chunker;
 import chunker.polynomials;
@@ -34,8 +35,6 @@ import ae.sys.file;
 import ae.utils.array;
 import ae.utils.funopt;
 import ae.utils.main;
-
-pragma(lib, "fuse");
 
 alias Digest = MD5;
 alias Hash = ReturnType!(Digest.finish);
@@ -499,7 +498,7 @@ void cachedGetSize(string realPathStr, stat_t* s)
 
 extern(C) nothrow
 {
-	int fs_getattr(const char* c_path, stat_t* s)
+	int fs_getattr(const char* c_path, stat_t* s, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			auto realPath = c_path.filePath;
@@ -511,7 +510,7 @@ extern(C) nothrow
 		});
 	}
 
-	int fs_read(const char* c_path, char* buf_ptr, size_t size, off_t offset, fuse_file_info* fi)
+	int fs_read(const char* c_path, ubyte* buf_ptr, size_t size, off_t offset, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			auto unparsedData = c_path.filePath.to!string.mapFile(MmMode.read);
@@ -523,14 +522,14 @@ extern(C) nothrow
 			size_t p = 0;
 			foreach (ref datum; parsedData.bytes[offset .. offset + bytesRead])
 			{
-				buf_ptr[p .. p + datum.length] = cast(char[])datum.unsafeContents;
+				buf_ptr[p .. p + datum.length] = cast(ubyte[])datum.unsafeContents;
 				p += datum.length;
 			}
 			return bytesRead.to!int;
 		});
 	}
 
-	int fs_write(const char* c_path, char* data_ptr, size_t size, off_t offset, fuse_file_info* fi)
+	int fs_write(const char* c_path, const ubyte* data_ptr, size_t size, off_t offset, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			auto f = c_path.rawFile();
@@ -540,14 +539,14 @@ extern(C) nothrow
 		});
 	}
 
-	int fs_chmod(const char* c_path, uint mode)
+	int fs_chmod(const char* c_path, uint mode, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			errnoEnforce(chmod(c_path.filePath.tempCString, mode) == 0, "chmod");
 		});
 	}
 
-	int fs_truncate(const char* c_path, long length)
+	int fs_truncate(const char* c_path, long length, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			enforce(length >= 0, new ErrnoException("Bad length", EINVAL));
@@ -557,8 +556,8 @@ extern(C) nothrow
 		});
 	}
 
-	int fs_readdir(const char* c_path, void* buf, 
-		fuse_fill_dir_t filler, off_t /*offset*/, fuse_file_info* fi)
+	int fs_readdir(const char* c_path, void* buf,
+		fuse_fill_dir_t filler, off_t /*offset*/, fuse_file_info* fi, ReadDirFlags flags)
 	{
 		return fuseWrap({
 			foreach (de; c_path.filePath.to!string.dirEntries(SpanMode.shallow))
@@ -567,7 +566,7 @@ extern(C) nothrow
 				errnoEnforce(lstat(de.name.tempCString, &s) == 0, "lstat");
 				if (isStub(s))
 					continue;
-				filler(buf, cast(char*)de.name.baseName.toStringz, null, 0);
+				filler(buf, cast(char*)de.name.baseName.toStringz, null, 0, FillDirFlags.FUSE_FILL_DIR_DEFAULTS);
 			}
 		});
 	}
@@ -623,9 +622,12 @@ extern(C) nothrow
 		});
 	}
 
-	int fs_rename(const char* c_orig, const char* c_dest)
+	int fs_rename(const char* c_orig, const char* c_dest, uint flags)
 	{
 		return fuseWrap({
+			// RENAME_NOREPLACE / RENAME_EXCHANGE are not implemented.
+			enforce(flags == 0, new ErrnoException("Unsupported rename flags", EINVAL));
+
 			auto destPath = c_dest.filePath;
 
 			c_orig.filePath.rename(destPath);
@@ -635,7 +637,7 @@ extern(C) nothrow
 		});
 	}
 
-	int fs_utimens(const char* c_path, const ref timespec[2] t)
+	int fs_utimens(const char* c_path, const ref timespec[2] t, fuse_file_info* fi)
 	{
 		return fuseWrap({
 			errnoEnforce(utimensat(AT_FDCWD, c_path.filePath.tempCString, t, 0) == 0, "utimensat");
@@ -685,20 +687,19 @@ int ripfs(
 	fsops.access = &fs_access;
 	fsops.utimens = &fs_utimens;
 
-	options ~= ["big_writes"]; // Essentially required, otherwise FUSE will use 4K writes and cause abysmal performance
-
-	string[] args = ["ripfs", mountPath, "-o%-(%s,%)".format(options)];
+	string[] args = ["ripfs", mountPath];
+	if (options.length)
+		args ~= "-o%-(%s,%)".format(options);
 	args ~= "-s"; // single-threaded
 	if (foreground)
 		args ~= "-f";
 	auto c_args = new char*[args.length];
 	foreach (i, arg; args)
 		c_args[i] = cast(char*)arg.toStringz;
-	auto f_args = FUSE_ARGS_INIT(cast(int)c_args.length, c_args.ptr);
 
 	stderr.writeln("Starting FUSE filesystem.");
 	scope(success) stderr.writeln("ripfs exiting.");
-	return fuse_main(f_args.argc, f_args.argv, &fsops, null);
+	return fuse_main(cast(int)c_args.length, c_args.ptr, &fsops, null);
 }
 
 mixin main!(funopt!ripfs);
